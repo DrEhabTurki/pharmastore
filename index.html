@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pharma AI Quest</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #1a1b1e; --rose: #b76e79; --emerald: #50c878; --dark-gray: #2d2e32; --gold-light: #e4b4b4;
+        }
+        body {
+            background: var(--bg); font-family: 'Cairo', sans-serif; margin: 0;
+            display: flex; justify-content: center; align-items: center; min-height: 100vh; color: #fff;
+        }
+        #app {
+            width: 90%; max-width: 550px; background: var(--dark-gray); padding: 30px;
+            border-radius: 30px; border: 1px solid var(--rose);
+            box-shadow: 0 0 40px rgba(183, 110, 121, 0.15); position: relative;
+        }
+        /* AI Status Pulse */
+        .ai-status { font-size: 0.7em; color: var(--emerald); display: flex; align-items: center; gap: 5px; margin-bottom: 10px; }
+        .pulse { width: 8px; height: 8px; background: var(--emerald); border-radius: 50%; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(2.5); opacity: 0; } }
+
+        .progress-bar { width: 100%; height: 4px; background: #111; border-radius: 10px; margin: 20px 0; overflow: hidden; }
+        #progress { height: 100%; background: linear-gradient(to left, var(--rose), var(--gold-light)); width: 0%; transition: 0.4s; }
+
+        .q-text { font-size: 1.3em; font-weight: 700; line-height: 1.6; text-align: center; margin: 30px 0; color: #f8f9fa; }
+        
+        .options-container { display: grid; gap: 15px; }
+        .opt-btn {
+            background: rgba(80, 200, 120, 0.1); border: 2px solid var(--emerald); color: var(--emerald);
+            padding: 18px; border-radius: 15px; cursor: pointer; font-family: 'Cairo'; font-weight: 700;
+            font-size: 1.1em; transition: 0.3s; text-align: center;
+        }
+        .opt-btn:hover { background: var(--emerald); color: var(--bg); box-shadow: 0 0 15px rgba(80, 200, 120, 0.4); }
+        
+        .scanner-panel {
+            background: #1e1f23; border-radius: 15px; padding: 15px; margin-top: 20px;
+            border-right: 5px solid var(--rose); display: none; font-size: 0.9em; color: var(--gold-light);
+        }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div class="ai-status"><div class="pulse"></div> AI VERIFIER ACTIVE</div>
+    
+    <div style="display: flex; justify-content: space-between; font-weight: 900; color: var(--rose);">
+        <span id="level-tag">المستوى: مبتدئ</span>
+        <span id="score-tag">XP: 0</span>
+    </div>
+
+    <div class="progress-bar"><div id="progress"></div></div>
+
+    <div id="question" class="q-text">محرك الذكاء الاصطناعي يحلل البيانات...</div>
+
+    <div id="options" class="options-container"></div>
+
+    <div id="scanner" class="scanner-panel"></div>
+    
+    <button id="hint-trigger" style="background:none; border:none; color:var(--rose); cursor:pointer; margin-top:20px; font-family:'Cairo'; font-size:0.8em; text-decoration:underline;">
+        إظهار التحليل الذكي للسؤال
+    </button>
+</div>
+
+<script>
+    // نظام تخزين وحفظ الأسئلة لمنع التكرار نهائياً
+    const AI_Engine = {
+        score: 0,
+        count: 0,
+        usedIds: new Set(JSON.parse(localStorage.getItem('usedQuestions')) || []),
+        
+        // بنك الأسئلة (يمكنك استبدال هذا برابط API خارجي لجلب 100 ألف سؤال)
+        bank: [
+            { id: 1, q: "ليه البرد ملوش علاقة بالمضاد الحيوي؟", o: ["فيروسي", "بكتيري", "نقص فيتامين"], c: 0, h: "المضادات بتشتغل على الجدار الخلوي للبكتيريا، والفيروسات معندهاش الجدار ده." },
+            { id: 2, q: "أهم عرض لهبوط السكر المفاجئ هو:", o: ["صداع شديد", "رعشة وعرق بارد", "نهجان"], c: 1, h: "الجسم بيفرز أدرينالين لما السكر يقل، وده بيعمل الرعشة والعرق." },
+            { id: 3, q: "دواء الكوليسترول يفضل أخذه ليلاً لأن:", o: ["بيسبب نعاس", "الكبد ينشط ليلاً", "بيفتح الشهية"], c: 1, h: "إنزيم HMG-CoA reductase المسؤول عن تصنيع الكوليسترول بيكون في قمة نشاطه بليل." },
+            { id: 4, q: "أي الأدوية التالية لا يسبب قرحة معدة؟", o: ["الأسبرين", "البروفين", "البنادول"], c: 2, h: "البنادول لا يؤثر على إنزيمات الـ COX في المعدة بشكل مباشر." }
+            // أضف أي عدد من الأسئلة هنا.. النظام سيفلترها تلقائياً
+        ],
+
+        init() {
+            this.loadNext();
+            document.getElementById('hint-trigger').onclick = () => {
+                document.getElementById('scanner').style.display = 'block';
+            };
+        },
+
+        loadNext() {
+            // تصفية الأسئلة غير المستخدمة
+            const available = this.bank.filter(item => !this.usedIds.has(item.id));
+            
+            if (available.length === 0) {
+                alert("تهانينا! لقد أنهيت جميع الأسئلة في قاعدة البيانات.");
+                this.usedIds.clear(); // إعادة تدوير الأسئلة
+            }
+
+            const q = available[Math.floor(Math.random() * available.length)];
+            
+            document.getElementById('question').innerText = q.q;
+            document.getElementById('scanner').innerText = "💡 تحليل الـ AI: " + q.h;
+            document.getElementById('scanner').style.display = 'none';
+            
+            const opts = document.getElementById('options');
+            opts.innerHTML = '';
+            q.o.forEach((txt, i) => {
+                const b = document.createElement('div');
+                b.className = 'opt-btn';
+                b.innerText = txt;
+                b.onclick = () => this.check(i, q.c, q.id);
+                opts.appendChild(b);
+            });
+        },
+
+        check(selected, correct, id) {
+            if (selected === correct) {
+                this.score += 10;
+                this.count++;
+                this.usedIds.add(id);
+                localStorage.setItem('usedQuestions', JSON.stringify([...this.usedIds]));
+                
+                document.getElementById('score-tag').innerText = `XP: ${this.score}`;
+                document.getElementById('progress').style.width = (this.count * 10) + "%";
+                this.loadNext();
+            } else {
+                alert("❌ إجابة غير دقيقة.. راجع التحليل الذكي!");
+            }
+        }
+    };
+
+    AI_Engine.init();
+</script>
+</body>
+</html>
